@@ -5,7 +5,6 @@ import {
   checkMatch,
   removePair,
   getHint,
-  saveGameResult,
 } from "./api/gameApi";
 
 import chatgptLogo from "./assets/chatgpt.png";
@@ -23,7 +22,35 @@ import perplexityLogo from "./assets/perplexity.png";
 
 const MAX_TILE_TYPES = 40;
 const MAX_SHUFFLE_ATTEMPTS = 120;
-const TIMER_SECONDS = 180;
+const DEFAULT_TIMER_SECONDS = 180;
+
+const TIMER_CONFIG = {
+  BEGINNER: {
+    timeLimitSeconds: 180,
+    warningAtSeconds: 120,
+    dangerAtSeconds: 60,
+  },
+  EASY: {
+    timeLimitSeconds: 180,
+    warningAtSeconds: 120,
+    dangerAtSeconds: 60,
+  },
+  MEDIUM: {
+    timeLimitSeconds: 180,
+    warningAtSeconds: 120,
+    dangerAtSeconds: 60,
+  },
+  HARD: {
+    timeLimitSeconds: 300,
+    warningAtSeconds: 210,
+    dangerAtSeconds: 90,
+  },
+  INSANE: {
+    timeLimitSeconds: 600,
+    warningAtSeconds: 420,
+    dangerAtSeconds: 150,
+  },
+};
 const MAX_HELP_USES = 5;
 const BASE_MATCH_SCORE = 5;
 const COMBO_WINDOW_MS = 5000;
@@ -138,7 +165,7 @@ function GamePage() {
 
   const [message, setMessage] = useState("Choose a mode and start the game.");
   const [isSolving, setIsSolving] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(TIMER_SECONDS);
+  const [timeLeft, setTimeLeft] = useState(DEFAULT_TIMER_SECONDS);
   const [helpUsesLeft, setHelpUsesLeft] = useState(MAX_HELP_USES);
   const [score, setScore] = useState(0);
   const [comboStreak, setComboStreak] = useState(0);
@@ -152,15 +179,11 @@ function GamePage() {
   const [isResultSoundOn, setIsResultSoundOn] = useState(false);
   const [resultVideoLayout, setResultVideoLayout] = useState("landscape");
 
-  const timeLeftRef = useRef(TIMER_SECONDS);
+  const timeLeftRef = useRef(DEFAULT_TIMER_SECONDS);
   const lastMatchAtRef = useRef(null);
   const comboStreakRef = useRef(0);
   const matchCountRef = useRef(0);
   const resultVideoRef = useRef(null);
-  const gameStartedAtRef = useRef(null);
-  const savedResultRef = useRef(false);
-  const helpUsedRef = useRef(0);
-  const finalScoreRef = useRef(0);
 
   const isCustomMode = difficulty === "CUSTOM";
 
@@ -172,6 +195,11 @@ function GamePage() {
         tileTypes: customTileTypes,
       }
     : DIFFICULTY_PRESETS[difficulty];
+
+  const timerConfig = TIMER_CONFIG[difficulty] ?? TIMER_CONFIG.MEDIUM;
+  const currentTimeLimitSeconds = isCustomMode
+    ? 0
+    : timerConfig.timeLimitSeconds ?? DEFAULT_TIMER_SECONDS;
 
   const isTimedMode = !isCustomMode;
   const hasHelpLimit = !isCustomMode;
@@ -277,7 +305,9 @@ function GamePage() {
       setHintTiles([]);
       setPathPoints([]);
       setIsSolving(false);
-      finishGame("LOSE", "TIME_UP", "Time is up!");
+      setResultReason("TIME_UP");
+      setGameResult("LOSE");
+      setMessage("Time is up!");
     }
   }, [isTimeUp]);
 
@@ -330,7 +360,6 @@ function GamePage() {
     lastMatchAtRef.current = null;
     comboStreakRef.current = 0;
     matchCountRef.current = 0;
-    finalScoreRef.current = 0;
     setScore(0);
     setComboStreak(0);
     setLastMatchBonus(0);
@@ -361,8 +390,7 @@ function GamePage() {
       id: now,
       text: burstText,
     });
-    finalScoreRef.current += gainedPoints;
-    setScore(finalScoreRef.current);
+    setScore((currentScore) => currentScore + gainedPoints);
 
     return {
       points: gainedPoints,
@@ -372,11 +400,11 @@ function GamePage() {
   }
 
   function getTimerTone(secondsLeft) {
-    if (secondsLeft <= 60) {
+    if (secondsLeft <= timerConfig.dangerAtSeconds) {
       return "danger";
     }
 
-    if (secondsLeft <= 120) {
+    if (secondsLeft <= timerConfig.warningAtSeconds) {
       return "warning";
     }
 
@@ -673,60 +701,6 @@ function GamePage() {
     };
   }
 
-  function buildResultPayload(result, reason, boardSnapshot, finalScoreValue) {
-    const finishedAtMs = Date.now();
-    const startedAtMs = gameStartedAtRef.current || finishedAtMs;
-    const snapshot = boardSnapshot || boardData;
-    const remainingPairs = snapshot
-      ? snapshot.remainingPairs ?? countRemainingPairs(snapshot.board)
-      : 0;
-    const safeTotalPairs = Math.max(totalPairs, remainingPairs);
-    const safeClearedPairs = Math.max(0, safeTotalPairs - remainingPairs);
-
-    return {
-      playerName: playerName.trim() || "Guest",
-      difficulty,
-      difficultyLabel: currentMode.label,
-      rowsCount: currentMode.rows,
-      colsCount: currentMode.cols,
-      tileTypes: currentMode.tileTypes,
-      totalPairs: safeTotalPairs,
-      clearedPairs: safeClearedPairs,
-      helpUsed: helpUsedRef.current,
-      finalScore: Math.max(0, finalScoreValue ?? finalScoreRef.current),
-      result,
-      resultReason: reason,
-      timeLimitSeconds: isTimedMode ? TIMER_SECONDS : 0,
-      timeLeftSeconds: isTimedMode ? Math.max(0, timeLeftRef.current) : 0,
-      playDurationSeconds: Math.max(0, Math.floor((finishedAtMs - startedAtMs) / 1000)),
-      startedAt: new Date(startedAtMs).toISOString(),
-      finishedAt: new Date(finishedAtMs).toISOString(),
-    };
-  }
-
-  function persistGameResult(result, reason, boardSnapshot, finalScoreValue) {
-    if (savedResultRef.current) {
-      return;
-    }
-
-    savedResultRef.current = true;
-    const payload = buildResultPayload(result, reason, boardSnapshot, finalScoreValue);
-
-    saveGameResult(payload).catch((error) => {
-      savedResultRef.current = false;
-      console.error("Cannot save game result.", error);
-    });
-  }
-
-  function finishGame(result, reason, nextMessage, options = {}) {
-    const finalScoreValue = options.finalScore ?? finalScoreRef.current;
-
-    setResultReason(reason);
-    setGameResult(result);
-    setMessage(nextMessage);
-    persistGameResult(result, reason, options.boardData || boardData, finalScoreValue);
-  }
-
   function handleCustomRowsChange(e) {
     const value = clamp(Number(e.target.value), 2, 20);
     const newMaxTileTypes = getMaxTileTypes(value, customCols);
@@ -774,7 +748,7 @@ function GamePage() {
 
       setHintTiles([]);
       setPathPoints([]);
-      const initialTimeLeft = isCustomMode ? 0 : TIMER_SECONDS;
+      const initialTimeLeft = isCustomMode ? 0 : currentTimeLimitSeconds;
       timeLeftRef.current = initialTimeLeft;
       setTimeLeft(initialTimeLeft);
       setHelpUsesLeft(isCustomMode ? Infinity : MAX_HELP_USES);
@@ -782,10 +756,6 @@ function GamePage() {
       setResultReason(null);
       setIsResultSoundOn(false);
       setResultVideoFailed(false);
-      gameStartedAtRef.current = Date.now();
-      savedResultRef.current = false;
-      helpUsedRef.current = 0;
-      finalScoreRef.current = 0;
       setMessage(prepared.shuffled ? "Game started. Board was reshuffled." : "Game started.");
       setScreen("GAME");
     } catch (error) {
@@ -807,11 +777,8 @@ function GamePage() {
     setIsResultSoundOn(false);
     setResultVideoFailed(false);
     resetScoreState(0);
-    gameStartedAtRef.current = null;
-    savedResultRef.current = false;
-    helpUsedRef.current = 0;
-    timeLeftRef.current = TIMER_SECONDS;
-    setTimeLeft(TIMER_SECONDS);
+    timeLeftRef.current = DEFAULT_TIMER_SECONDS;
+    setTimeLeft(DEFAULT_TIMER_SECONDS);
     setHelpUsesLeft(MAX_HELP_USES);
   }
 
@@ -892,10 +859,9 @@ function GamePage() {
         setBoardData(updatedBoardData);
         setSelectedTiles([]);
         setPathPoints([]);
-        finishGame("WIN", "PLAYER_WIN", `You win! ${scoreMessage}`, {
-          boardData: updatedBoardData,
-          finalScore: finalScoreRef.current,
-        });
+        setResultReason("PLAYER_WIN");
+        setGameResult("WIN");
+        setMessage(`You win! ${scoreMessage}`);
         return;
       }
 
@@ -950,8 +916,6 @@ function GamePage() {
 
       setBoardData(prepared.boardData);
       setHintTiles([prepared.hint.from, prepared.hint.to]);
-
-      helpUsedRef.current += 1;
 
       if (hasHelpLimit) {
         setHelpUsesLeft(nextHelpUsesLeft);
@@ -1041,16 +1005,17 @@ function GamePage() {
       }
 
       if (currentBoardData.solved) {
-        finishGame(
-          "LOSE",
-          "AUTO_SOLVE",
+        setResultReason("AUTO_SOLVE");
+        setGameResult("LOSE");
+        setMessage(
           usedShuffle
             ? "Auto solve finished the board after reshuffling. This counts as a loss."
-            : "Auto solve finished the board. This counts as a loss.",
-          { boardData: currentBoardData }
+            : "Auto solve finished the board. This counts as a loss."
         );
       } else if (isTimedMode && timeLeftRef.current <= 0) {
-        finishGame("LOSE", "TIME_UP", "Time is up!", { boardData: currentBoardData });
+        setResultReason("TIME_UP");
+        setGameResult("LOSE");
+        setMessage("Time is up!");
       } else {
         setMessage("Solver stopped to avoid an infinite loop.");
       }
@@ -1125,7 +1090,8 @@ function GamePage() {
                   >
                     <span>{preset.label}</span>
                     <small>
-                      {preset.rows}x{preset.cols} · {preset.tileTypes} types
+                      {preset.rows}x{preset.cols} · {preset.tileTypes} types ·{" "}
+                      {formatTime(TIMER_CONFIG[key]?.timeLimitSeconds ?? DEFAULT_TIMER_SECONDS)}
                     </small>
                   </button>
                 ))}
@@ -1339,7 +1305,10 @@ function GamePage() {
     );
   }
 
-  const timerPercent = isTimedMode ? (timeLeft / TIMER_SECONDS) * 100 : 0;
+  const timerPercent =
+    isTimedMode && currentTimeLimitSeconds > 0
+      ? (timeLeft / currentTimeLimitSeconds) * 100
+      : 0;
   const timerTone = isTimedMode ? getTimerTone(timeLeft) : "normal";
   const remainingPairs = boardData
     ? boardData.remainingPairs ?? countRemainingPairs(boardData.board)
