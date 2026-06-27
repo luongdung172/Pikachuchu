@@ -42,16 +42,45 @@ const TIMER_CONFIG = {
     dangerAtSeconds: 60,
   },
   HARD: {
-    timeLimitSeconds: 300, // 5:00
-    warningAtSeconds: 210, // 3:30
-    dangerAtSeconds: 90, // 1:30
+    timeLimitSeconds: 300,
+    warningAtSeconds: 210,
+    dangerAtSeconds: 90,
   },
   INSANE: {
-    timeLimitSeconds: 600, // 10:00
-    warningAtSeconds: 420, // 7:00
-    dangerAtSeconds: 150, // 2:30
+    timeLimitSeconds: 600,
+    warningAtSeconds: 420,
+    dangerAtSeconds: 150,
   },
 };
+const FALLBACK_API_ROOT =
+  import.meta.env.VITE_API_ROOT ||
+  (import.meta.env.VITE_API_BASE_URL
+    ? import.meta.env.VITE_API_BASE_URL.replace(/\/api\/game\/?$/, "")
+    : "http://localhost:8080");
+
+async function saveGameResultSafely(payload) {
+  try {
+    return await saveGameResult(payload);
+  } catch (firstError) {
+    const response = await fetch(`${FALLBACK_API_ROOT}/api/results`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(
+        `Cannot save game result. First error: ${firstError.message}. Fallback error ${response.status}: ${errorText}`
+      );
+    }
+
+    return await response.json();
+  }
+}
+
 const MAX_HELP_USES = 5;
 const BASE_MATCH_SCORE = 5;
 const COMBO_WINDOW_MS = 5000;
@@ -745,7 +774,7 @@ function GamePage() {
     savedResultRef.current = true;
     const payload = buildResultPayload(result, reason, boardSnapshot, finalScoreValue);
 
-    saveGameResult(payload).catch((error) => {
+    saveGameResultSafely(payload).catch((error) => {
       savedResultRef.current = false;
       console.error("Cannot save game result.", error);
     });
