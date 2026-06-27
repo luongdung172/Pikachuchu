@@ -42,14 +42,14 @@ const TIMER_CONFIG = {
     dangerAtSeconds: 60,
   },
   HARD: {
-    timeLimitSeconds: 300,
-    warningAtSeconds: 210,
-    dangerAtSeconds: 90,
+    timeLimitSeconds: 360,
+    warningAtSeconds: 240,
+    dangerAtSeconds: 120,
   },
   INSANE: {
-    timeLimitSeconds: 600,
-    warningAtSeconds: 420,
-    dangerAtSeconds: 150,
+    timeLimitSeconds: 1200,
+    warningAtSeconds: 800,
+    dangerAtSeconds: 300,
   },
 };
 const FALLBACK_API_ROOT =
