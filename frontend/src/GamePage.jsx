@@ -47,8 +47,8 @@ const TIMER_CONFIG = {
     dangerAtSeconds: 120,
   },
   INSANE: {
-    timeLimitSeconds: 1200,
-    warningAtSeconds: 800,
+    timeLimitSeconds: 900,
+    warningAtSeconds: 600,
     dangerAtSeconds: 300,
   },
 };
