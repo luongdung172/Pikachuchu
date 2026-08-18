@@ -6,4 +6,4 @@ A project of Pikachu game building with Java for backend and React + Javascript 
 
 Second year, in SOICT, HUST.
 
-Officially deployed [here](https://pikachuchu.vercel.app)
+Officially deployed [here](https://pikachuchu.vercel.app).
